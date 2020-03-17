@@ -130,7 +130,7 @@ def occurrence():
     status.cell(5, 1, diagnosis[5].span.contents[0]) # 음성인 환자 수
     wb.save(path+"/코로나데이터.xlsx")
 
-def maskinfo(): # 현재작업중
+def maskinfo(): # 현재 여기 작업중
     html = urlopen("http://www.gbgs.go.kr/design/health/COVID19/COVID19_05_02.html") # 경산시 마스크 공적판매처
     OfficialMask = BeautifulSoup(html, "html.parser").body.contents[5].div.div.div.div.contents
     OfficialMask =[OfficialMask[9].table.tbody, OfficialMask[15].table.tbody]
