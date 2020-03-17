@@ -33,7 +33,7 @@ mask = wb.create_sheet("마스크 판매 약국")
             When["None"] = [j]
             Info[""]
 
-        if j[0] is "※": # 여기 작업중
+        if j[0] is "※":
             when = j.split("/")
             month = int(when[0])
             when = when[1].split(" ")
