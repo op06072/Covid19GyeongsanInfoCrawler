@@ -5,10 +5,11 @@ import os
 
 path = os.path.dirname(__file__)
 wb = xl.load_workbook(path+"/코로나데이터.xlsx", data_only=True)
-status = wb.create_sheet("발생 현황")
-route = wb.create_sheet("이동 경로")
-clinic = wb.create_sheet("선별진료소")
-mask = wb.create_sheet("마스크 판매 약국")
+
+status = wb["발생 현황"]
+route = wb["이동 경로"]
+clinic = wb["선별진료소"]
+mask = wb["마스크 판매 약국"]
 
 """ for i in bsObject[3::2]:
     Where = []
@@ -124,10 +125,10 @@ def occurrence():
     info = gs[7].contents
     patients = info[1].ul.contents # 확진자 데이터
     diagnosis = info[3].ul.contents # 의심환자 데이터
-    status.cell(2, 1, patients[1].span.contents[0]) # 확진자 수
-    status.cell(3, 1, diagnosis[3].span.contents[0]) # 검사중인 환자 수
-    status.cell(4, 1, patients[5].span.contents[0]) # 퇴원자 수
-    status.cell(5, 1, diagnosis[5].span.contents[0]) # 음성인 환자 수
+    status.cell(2, 1, int("".join(patients[1].span.contents[0].split(",")))) # 확진자 수
+    status.cell(3, 1, int("".join(diagnosis[3].span.contents[0].split(",")))) # 검사중인 환자 수
+    status.cell(4, 1, int("".join(patients[5].span.contents[0].split(",")))) # 퇴원자 수
+    status.cell(5, 1, int("".join(diagnosis[5].span.contents[0].split(",")))) # 음성인 환자 수
     wb.save(path+"/코로나데이터.xlsx")
 
 def maskinfo():
@@ -212,4 +213,51 @@ def maskinfo():
         mask.cell(row, 8, i[9].contents[0]) # 재고량 갱신 시간
     wb.save(path+"/코로나데이터.xlsx")
 
+def clinicinfo(): # 선별진료소 데이터 크롤링
+    html = urlopen("http://www.gbgs.go.kr/design/health/COVID19/COVID19_04.html") # 선별 진료소 현황
+    Clinic = BeautifulSoup(html, "html.parser").body.contents[5].div.div.div.table.tbody.contents
+    row = 1
+    for i in Clinic[1::2]:
+        i = i.contents
+        clinic.cell(row, 1, i[1].contents[0]) # 기관
+        clinic.cell(row, 2, i[3].contents[0]) # 주소
+        call = []
+        for j in i[5].contents:
+            t=str(type(j))
+            if "bs4.element.NavigableString" in t or "bs4.element.Comment" in t:
+                j = j.split("\r")
+                j = j[-1].split("\n")
+                j = j[-1].split("\t")[-1]
+                call.append(j)
+        clinic.cell(row, 3, " \r\n".join(call)) # 전화번호
+        time = []
+        for j in i[7].contents:
+            t=str(type(j))
+            if "bs4.element.NavigableString" in t or "bs4.element.Comment" in t:
+                j = j.split("\r")
+                j = j[-1].split("\n")
+                j = j[-1].split("\t")[-1]
+                time.append(j)
+        clinic.cell(row, 4, " \r\n".join(time)) # 진료시간
+        if len(i) > 9:
+            extra = []
+            I = i[9].contents
+            if len(I) == 1 and "bs4.element.Tag" in str(type(I[0])):
+                I = I[0].contents
+            for j in I:
+                t=str(type(j))
+                if "bs4.element.NavigableString" in t or "bs4.element.Comment" in t:
+                    j = j.split("\r")
+                    j = j[-1].split("\n")
+                    j = j[-1].split("\t")[-1]
+                    extra.append(j)
+            clinic.cell(row, 5, " \r\n".join(extra))
+        else:
+            extra = clinic.cell(row-1, 5).value
+            clinic.cell(row, 5, extra)
+        row += 1
+    wb.save(path+"/코로나데이터.xlsx")
+
+occurrence()
+clinicinfo()
 maskinfo()
