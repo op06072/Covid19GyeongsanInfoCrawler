@@ -33,7 +33,7 @@ mask = wb.create_sheet("마스크 판매 약국")
             When["None"] = [j]
             Info[""]
 
-        if j[0] is "※":
+        if j[0] is "※": # 여기 작업중
             when = j.split("/")
             month = int(when[0])
             when = when[1].split(" ")
@@ -130,7 +130,7 @@ def occurrence():
     status.cell(5, 1, diagnosis[5].span.contents[0]) # 음성인 환자 수
     wb.save(path+"/코로나데이터.xlsx")
 
-def maskinfo(): # 현재 여기 작업중
+def maskinfo():
     html = urlopen("http://www.gbgs.go.kr/design/health/COVID19/COVID19_05_02.html") # 경산시 마스크 공적판매처
     OfficialMask = BeautifulSoup(html, "html.parser").body.contents[5].div.div.div.div.contents
     OfficialMask =[OfficialMask[9].table.tbody, OfficialMask[15].table.tbody]
@@ -148,8 +148,68 @@ def maskinfo(): # 현재 여기 작업중
             EupMyeon.append(i)
     row = 1
     for i in Dong: # 동지역 판매처
-        mask.cell(row, 1, i.contents[1].contents[0].split("\\")[0]) # 분류
-        mask.cell(row, 2, i.contents[2].contents[0]) # 판매처 이름
-        mask.cell(row, 3, i.contents[4].contents[0]) # 전화번호
+        I = []
+        for j in i:
+            t=str(type(j))
+            if "bs4.element.NavigableString" not in t and "bs4.element.Comment" not in t:
+                I.append(j)
+        if len(I) == 3:
+            mask.cell(row, 1, I[0].contents[0].split("\\")[0]) # 분류
+            mask.cell(row, 2, I[1].contents[0]) # 판매처 이름
+            mask.cell(row, 3, I[2].contents[0]) # 전화번호
+            mask.cell(row, 4, "공적판매처") # 공사구분
+            mask.cell(row, 5, "동") # 동 읍/면 구분
+        else:
+            mask.cell(row, 2, I[0].contents[0]) # 판매처 이름
+            mask.cell(row, 3, i[1].contents[0]) # 전화번호
+            mask.cell(row, 4, "공적판매처") # 공사구분
+            mask.cell(row, 5, "동") # 동 읍/면 구분
+        row += 1
+    for i in EupMyeon: # 읍면지역 판매처
+        I = []
+        for j in i:
+            t=str(type(j))
+            if "bs4.element.NavigableString" not in t and "bs4.element.Comment" not in t:
+                I.append(j)
+        if len(I) == 3:
+            mask.cell(row, 1, I[0].contents[0].split("\\")[0]) # 분류
+            mask.cell(row, 2, I[1].contents[0]) # 판매처 이름
+            mask.cell(row, 3, I[2].contents[0]) # 전화번호
+            mask.cell(row, 4, "공적판매처") # 공사구분
+            mask.cell(row, 5, "읍/면") # 동 읍/면 구분
+        else:
+            mask.cell(row, 2, I[0].contents[0]) # 판매처 이름
+            mask.cell(row, 3, I[1].contents[0]) # 전화번호
+            mask.cell(row, 4, "공적판매처") # 공사구분
+            mask.cell(row, 5, "읍/면") # 동 읍/면 구분
+        row += 1
+    html = urlopen("http://www.gbgs.go.kr/design/health/COVID19/COVID19_05_03.html") # 경산시 마스크 판매 약국
+    pharmacy = BeautifulSoup(html, "html.parser").body.contents[5].div.div.table.tbody.contents
+    for i in pharmacy[1::2]:
+        i = i.contents
+        mask.cell(row, 1, i[3].contents[0]) # 읍면동
+        mask.cell(row, 2, i[5].contents[0]) # 판매처이름
+        mask.cell(row, 3, i[9].contents[0]) # 전화번호
+        mask.cell(row, 4, "약국") # 공사구분
+        mask.cell(row, 5, i[7].contents[0]) # 주소
+        row += 1
+    html = urlopen("http://www.gbgs.go.kr/design/health/COVID19/COVID19_05_05.html") # 경산시 판매 현황
+    stock = BeautifulSoup(html, "html.parser").body.contents[5].div.div.div.div.table.tbody.contents
+    for i in stock[1::2]:
+        row = 1
+        i = i.contents
+        name = i[1].contents[0] # 판매처 이름
+        while mask.cell(row, 2).value not in [None, name]: # 판매처 인덱스 찾기
+            row += 1
+        Stock = i[5].contents[0]
+        if "(" in Stock:
+            Stock = Stock.split(" (")
+            Stock[1] = "(" + Stock[1]
+        else:
+            Stock = [Stock, ""]
+        mask.cell(row, 6, Stock[0]) # 재고 수준
+        mask.cell(row, 7, Stock[1]) # 재고량
+        mask.cell(row, 8, i[9].contents[0]) # 재고량 갱신 시간
+    wb.save(path+"/코로나데이터.xlsx")
 
 maskinfo()
