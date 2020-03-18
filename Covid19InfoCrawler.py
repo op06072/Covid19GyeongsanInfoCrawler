@@ -162,7 +162,7 @@ def maskinfo():
             mask.cell(row, 5, "동") # 동 읍/면 구분
         else:
             mask.cell(row, 2, I[0].contents[0]) # 판매처 이름
-            mask.cell(row, 3, i[1].contents[0]) # 전화번호
+            mask.cell(row, 3, [1].contents[0]) # 전화번호
             mask.cell(row, 4, "공적판매처") # 공사구분
             mask.cell(row, 5, "동") # 동 읍/면 구분
         row += 1
