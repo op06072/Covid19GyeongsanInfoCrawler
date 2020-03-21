@@ -23,37 +23,6 @@ building = 'https://dapi.kakao.com/v2/local/search/keyword.json?query=' # 건물
 address = 'https://dapi.kakao.com/v2/local/search/address.json?query=' # 주소 검색
 headers = { "Authorization": "KakaoAK 8d63652d146dc5a3a958048e957ba061"}
 
-
-""" for i in bsObject[3::2]:
-    Where = []
-    When = {}
-    I=i.tbody.contents
-    info = I[1].contents
-    Info = {"인적사항" : info[5].contents[0]} #인적사항 : 성별(거주하는 동, 나이)
-    day = info[9].contents[0].split(".")
-    Info["확진일자"] = day[0]+"월 "+day[1]+"일"
-    Info["입원기관"] = info[11].contents[0]
-    Info["접촉자 수(격리조치 중 접촉자 수)"] = info[13].contents[0]
-    number = int(info[1].contents[0])
-    where = I[3].contents[1].contents
-    for j in where[1::2]:
-        j = j.contents[1].contents[0]
-        if j == "경로 확인중":
-            When["None"] = ["경로 확인 중"]
-            Info["이동 경로"] = When
-            Patients[number] = Info
-            break
-        elif j == "주요동선(직장,병의원,약국)없음":
-            When["None"] = [j]
-            Info[""]
-
-        if j[0] is "※": # 여기 작업중
-            when = j.split("/")
-            month = int(when[0])
-            when = when[1].split(" ")
-            date = int(when[0])
-            do = when[1] """
-
 def addresslocation(PLACE): # 주소로 좌표획득
     if "," in PLACE:
         PLACE = PLACE.split(",")[0]
@@ -162,15 +131,44 @@ def movingroute():
 
 def occurrence():
     html = urlopen("http://www.gbgs.go.kr/programs/corona/corona.do")
-    gs = BeautifulSoup(html, "html.parser").body.contents[5].div.div.div.contents # 경산데이터
-    status.cell(1, 1, gs[5].contents[0]) # 업데이트 시간
-    info = gs[7].contents
-    patients = info[1].ul.contents # 확진자 데이터
-    diagnosis = info[3].ul.contents # 의심환자 데이터
-    status.cell(2, 1, int("".join(patients[1].span.contents[0].split(",")))) # 확진자 수
-    status.cell(3, 1, int("".join(diagnosis[3].span.contents[0].split(",")))) # 검사중인 환자 수
-    status.cell(4, 1, int("".join(patients[5].span.contents[0].split(",")))) # 퇴원자 수
-    status.cell(5, 1, int("".join(diagnosis[5].span.contents[0].split(",")))) # 음성인 환자 수
+    gs = BeautifulSoup(html, "html.parser").body.contents[5].div.div.find_all('div')[1] # 경산데이터
+    updatetime = gs.contents[3].contents[0].split("기준")[0].split(".")
+    updatetime = "20%s년 %s월 %s일 %s 기준" %(updatetime[0], updatetime[1], updatetime[2], updatetime[3][1:])
+    status.cell(1, 1, updatetime) # 업데이트 시간
+    info = gs.contents[5].contents
+    patients = info[1].ul.find_all("li") # 확진자 데이터
+    diagnosis = info[5].ul.find_all("li") # 의심환자 데이터
+    status.cell(2, 1, "전체")
+    status.cell(2, 2, int("".join(patients[0].span.contents[0].split(",")))) # 확진자 수
+    status.cell(2, 3, int("".join(diagnosis[1].contents[1].contents[0].split(",")))) # 검사중인 환자 수
+    status.cell(2, 4, int("".join(patients[3].span.contents[0].split(",")))) # 퇴원자 수
+    status.cell(2, 5, int("".join(diagnosis[2].span.contents[0].split(",")))) # 음성인 환자 수
+    area = []
+    for i in route.rows:
+        if i[2].value != None:
+            i = i[2].value.split("(")[1].split(",")[0]
+            if i not in area:
+                area.append(i)
+    area = sorted(area)
+    Area = {}
+    row = 2
+    for i in area:
+        row += 1
+        Area[i] = 0
+        status.cell(row, 1, i) # 동/읍/면
+        status.cell(row, 2, "0") # 동/읍/면 별 확진자 수 초기화
+    for i in route.rows:
+        if i[2].value != None:
+            i = i[2].value.split("(")[1].split(",")[0]
+            r = 2
+            for j in area:
+                r += 1
+                if j == i:
+                    status.cell(r, 2, str(int(status.cell(r, 2).value) + 1)) # 동/읍/면 별 확진자 수 초기화
+                    break
+    for i in status.rows:
+        if i[1].value != None:
+            i[1].value = int(i[1].value)
     wb.save(path+"/코로나데이터.xlsx")
 
 def maskinfo():
@@ -388,5 +386,13 @@ def crawler():
     occurrence()
     clinicinfo()
     maskinfo()
+
+def firebase():
+    cred = credentials.Certificate(path+'/covid19-daegu-gyeongsan-firebase-adminsdk-wfe8g-097e7accda.json')
+    firebase_admin.initialize_app(cred,{
+        'databaseURL' : 'https://covid19-daegu-gyeongsan.firebaseio.com/'
+    })
+    ref = db.reference('코로나/경산/')
+    ref.update({'발생현황':{''}})
 
 crawler()
