@@ -10,34 +10,84 @@ import requests
 import re
 
 path = os.path.dirname(__file__)
-wb = xl.load_workbook(path+"/코로나데이터.xlsx", data_only=True)
+wb = xl.load_workbook(path+"/코로나데이터.xlsx", data_only = True)
+Locate = xl.load_workbook(path+"/코로나위치좌표.xlsx", data_only = True)
 driver = webdriver.Chrome(path+"/chromedriver")
+places = []
 
 status = wb["발생 현황"]
 route = wb["이동 경로"]
 clinic = wb["선별진료소"]
-mask = wb["마스크 판매 약국"]
+mask = wb["마스크 판매처"]
+Location = Locate["좌표"]
+locaterow = 0
+for i in Location:
+    if i[0].value != None:
+        locaterow += 1
 xy_url = "http://maps.googleapis.com/maps/api/geocode/xml?address="
 # 카카오맵 api주소
+Tbuilding = "https://apis.openapi.sk.com/tmap/jsv2?version=1&appKey=발급받은 Appkey"
 building = 'https://dapi.kakao.com/v2/local/search/keyword.json?query=' # 건물명 검색
 address = 'https://dapi.kakao.com/v2/local/search/address.json?query=' # 주소 검색
 headers = { "Authorization": "KakaoAK 8d63652d146dc5a3a958048e957ba061"}
+locatecache = {}
 
 def addresslocation(PLACE): # 주소로 좌표획득
+    global locaterow
+    locaterow += 1
     if "," in PLACE:
         PLACE = PLACE.split(",")[0]
-    location = requests.get(address+PLACE, headers = headers).json()['documents'][0]
-    return [float(location['x']), float(location['y'])]
+    for i in Location.rows:
+        if i[0].value == PLACE:
+            locaterow -= 1
+            return [i[1].value, i[2].value]
+    location = requests.get(address+PLACE, headers = headers).json()['documents']
+    if len(location):
+        location = location[0]
+        Location.cell(locaterow, 1, PLACE)
+        Location.cell(locaterow, 2, float(location['x']))
+        Location.cell(locaterow, 3, float(location['y']))
+        Locate.save(path+"/코로나위치좌표.xlsx")
+        return [float(location['x']), float(location['y'])]
+    locaterow -= 1
+    return [0,0]
 
 def buildinglocation(PLACE): # 건물명으로 좌표획득
+    global locaterow
+    locaterow += 1
     if "농산물직판장" in PLACE:
         PLACE = PLACE.split("직판장")[0]
     PLACE = "".join(PLACE.split(" "))
-    location = requests.get(building+PLACE, headers = headers).json()['documents'][0]
-    return [float(location['x']), float(location['y'])]
+    for i in Location.rows:
+        if i[0].value == None:
+            break
+        place = "".join(i[0].value.split(" "))
+        if place == PLACE:
+            locaterow -= 1
+            return [i[1].value, i[2].value]
+    location = requests.get(building+PLACE, headers = headers).json()['documents']
+    if len(location):
+        location = location[0]
+        Location.cell(locaterow, 1, PLACE)
+        Location.cell(locaterow, 2, float(location['x']))
+        Location.cell(locaterow, 3, float(location['y']))
+        Locate.save(path+"/코로나위치좌표.xlsx")
+        return [float(location['x']), float(location['y'])]
+    locaterow -= 1
+    return [0,0]
 
 def routeaddress(string):
-    strlist = " ".join(re.findall("\s+", string))
+    for i in "월화수목금토일":
+        I = "(%s)"%i
+        if I in string:
+            string = string.split(I)[-1]
+    strlist = " ".join(re.compile('[(|)|가-힣|a-z|A-Z]+').findall(string))
+    strlist = re.findall("\S+", strlist)
+    Strlist = []
+    for i in strlist:
+        if len(i)^1:
+            Strlist.append(i)
+    strlist = " ".join(Strlist)
     #ban = [':','(',')','월','화','수','목','금','토','일',' ']
     if "동)" in strlist:
         strlist = strlist.split("동)")[0]+"동)"
@@ -47,13 +97,117 @@ def routeaddress(string):
         strlist = strlist.split("면)")[0]+"면)"
     elif "방문" in strlist:
         strlist = strlist.split("방문")[0]
+    elif "입원" in strlist:
+        strlist = strlist.split("입원")[0]
     elif "점" in strlist:
         strlist = strlist.split("점")[0]+"점"
-    searchstr = '경산 ' + strlist
-    return buildinglocation(searchstr)
+    if "근무" in strlist:
+        strlist = "".join(strlist.split("근무"))
+    if "의원" in strlist:
+        if "영상의학과의원" in strlist:
+            strlist = "".join(strlist.split("의원"))
+        strlist = strlist
+    else:
+        if "내과" in strlist:
+            strlist = "".join(strlist.split("내과"))
+        if "정신과" in strlist:
+            strlist = "".join(strlist.split("정신과"))
+        if "이비인후과" in strlist:
+            strlist = "".join(strlist.split("이비인후과"))
+        if "외과" in strlist:
+            strlist = "".join(strlist.split("외과"))
+        if "응급실" in strlist:
+            strlist = "".join(strlist.split("응급실"))
+        if "()" in strlist:
+            strlist = strlist.split("()")[0]
+    if "검사" in strlist:
+        strlist = "".join(strlist.split("검사"))
+    if "선별진료" in strlist:
+        strlist = strlist.split(" 선별진료")[0]
+        if "보건소" == strlist:
+            strlist = "경산시 보건소"
+        elif "대구" == strlist or "대구 드라이브스루" == strlist:
+            strlist = ""
+    if "진료" in strlist:
+        strlist = "".join(strlist.split("진료"))
+    if "경산시청" in strlist:
+        strlist = "경산시청"
+    if "입원" in strlist:
+        strlist = "".join(strlist.split("입원"))
+    if '칠곡' in strlist:
+        searchstr = strlist
+    elif '대구' in strlist:
+        searchstr = strlist
+    elif '경산' in strlist:
+        searchstr = strlist
+    elif '김천' in strlist:
+        searchstr = strlist
+    elif '영천' in strlist:
+        searchstr = strlist
+    elif '청도' in strlist:
+        searchstr = strlist
+    elif '시지지' in strlist:
+        searchstr = strlist
+    elif '계대동산병원' in strlist:
+        searchstr = "계명대학교 대구동산병원"
+    elif '경북대' in strlist:
+        searchstr = strlist
+    elif '영대' in strlist:
+        searchstr = strlist
+    elif '영남대' in strlist:
+        searchstr = strlist
+    elif strlist == '':
+        searchstr = '경산나경물류' # 검색결과가 없어서 사용
+    else:
+        searchstr = '경산 ' + strlist
+        #searchstr = strlist
+    places.append(searchstr)
+    if "약국" in strlist:
+        if "펜타힐즈" in strlist:
+            strlist = "펜타약국"
+        for i in mask.rows:
+            if i[1].value in strlist:
+                searchstr = i[1].value
+                if searchstr in locatecache:
+                    locate = locatecache[searchstr]
+                    return locate
+                else:
+                    locate = addresslocation("경산시 "+i[4].value)
+                    locatecache[searchstr] = locate
+                    Location.cell(locaterow, 1, strlist)
+                    Locate.save(path+"/코로나위치좌표.xlsx")
+                    return locate
+    if searchstr in locatecache:
+        locate = locatecache[searchstr]
+        return locate
+    else:
+        locate = buildinglocation(searchstr)
+        if locate == [0, 0]:
+            print("%s\n" %searchstr)
+            correctname = input()
+            if correctname in locatecache:
+                locate = locatecache[correctname]
+                return locate
+            locate = buildinglocation(correctname)
+            if locate != [0, 0]:
+                locatecache[searchstr] = locate
+                return locate
+            print("%s\n" %searchstr)
+            Address = input()
+            if Address == "":
+                locatecache[searchstr] = [0, 0]
+                return [0, 0]
+            if "대구" not in Address and "칠곡" not in Address and "김천" not in Address:
+                Address = "경상북도 경산시 " + Address
+            locate = addresslocation(Address)
+            Location.cell(locaterow, 1, correctname)
+            Locate.save(path+"/코로나위치좌표.xlsx")
+        locatecache[searchstr] = locate
+        return locate
 
 # 확진자 이동경로 크롤링
 def movingroute():
+    Day = ""
     driver.get("http://www.gbgs.go.kr/programs/coronaMove/coronaMove.do")
     #html = driver.find_element_by_xpath('html/body').find_elements_by_xpath('div')[2].find_element_by_xpath('div/div/div').find_elements_by_xpath('table')
     html = driver.page_source
@@ -88,7 +242,10 @@ def movingroute():
             route.cell(row, 5, "\n".join(center))
         else:
             route.cell(row, 5, info[4].contents[0])
-        route.cell(row, 6, info[5].contents[0])
+        if len(info[5]) == 0:
+            route.cell(row, 6, '확인중(확인중)')
+        else:
+            route.cell(row, 6, info[5].contents[0])
         where = I[3].find_all("li")
         extra = []
         for j in where:
@@ -96,36 +253,61 @@ def movingroute():
                 j = j.contents[0]
             else:
                 continue
-            if j == "경로 확인중":
-                route.cell(row, 8, "경로 확인중")
-            elif j == "주요동선(직장,병의원,약국)없음":
-                route.cell(row, 8, "주요동선(직장,병의원,약국)없음")
+            if "경로 확인중" in j:
+                route.cell(row, 7, "경로 확인중")
+            elif "주요동선(직장, 병의원, 약국) 없음" in j:
+                route.cell(row, 7, "주요동선(직장, 병의원, 약국) 없음")
             else:
                 if "※" in j:
-                    if j[0] == "※":
+                    i = 0
+                    while j[i] == " ":
+                        i += 1
+                    if j[i] == "※":
                         extra.append(j)
-                        continue
                     else:
                         j = j.split("※")
                         extra.append("※"+j[1])
                         j = j[0]
-                jlist = [j]
-                if "\n" in j:
-                    jlist = j.split("\n")
-                for k in jlist:
-                    if k == "":
+                        jlist = [j]
+                        if "\n" in j:
+                            jlist = j.split("\n")
+                        for k in jlist:
+                            if k == "":
+                                continue
+                            row += 1
+                            if "퇴원" not in k and "사망" not in k and "격리해제" not in k and "자택" not in k and "신천지" not in k and "직장" not in k and "양성" not in k and "자가격리" not in k and "없음" not in k and "두통" not in k and "발열" not in k and "근육통" not in k and "나경물류" not in k and "한국아이피엠" not in k:
+                                locate = routeaddress(k)
+                                if locate != [0, 0]:
+                                    route.cell(row, 8, float(locate[0]))
+                                    route.cell(row, 9, float(locate[1]))
+                            route.cell(row, 7, k)
+                else:
+                    if j == "":
                         continue
                     row += 1
-                    if "퇴원" not in k and "사망" not in k and "격리" not in k and "검사" not in k and "자택" not in k and "신천지" not in k and "직장" not in k and "양성" not in k:
-                        locate = routeaddress(k)
-                        route.cell(row, 9, float(locate[0]))
-                        route.cell(row, 10, float(locate[1]))
-                    route.cell(row, 8, k)
-                    #route.cell(row, 8, Route[0])
-                    #route.cell(row, 9, Route[1])
+                    day = []
+                    J = j
+                    for i in "월화수목금토일":
+                        I = "(%s)"%i
+                        if I in J:
+                            day.append(J.split(I)[0]+I)
+                            J = J.split(I)[-1]
+                    if len(day):
+                        if ":" in J:
+                            N = J.index(":")
+                            day.append(J[:N+3])
+                        Day = "".join(day)
+                    else:
+                        j = Day + j
+                    if "퇴원" not in j and "사망" not in j and "격리해제" not in j and "자택" not in j and "신천지" not in j and "직장" not in j and "양성" not in j and "자가격리" not in j and "없음" not in j and "두통" not in j and "발열" not in j and "근육통" not in j and "나경물류" not in j and "한국아이피엠" not in j:
+                        locate = routeaddress(j)
+                        if locate != [0, 0]:
+                            route.cell(row, 8, float(locate[0]))
+                            route.cell(row, 9, float(locate[1]))
+                    route.cell(row, 7, j)
                 for k in extra:
                     row += 1
-                    route.cell(row, 11, k)
+                    route.cell(row, 10, k)
         row += 1
     wb.save(path+"/코로나데이터.xlsx")
 
@@ -393,6 +575,20 @@ def firebase():
         'databaseURL' : 'https://covid19-daegu-gyeongsan.firebaseio.com/'
     })
     ref = db.reference('코로나/경산/')
-    ref.update({'발생현황':{''}})
+    Occur = {'갱신시간':status.cell(1,1).value, '검사중':status.cell(2,3).value, '완치':status.cell(2,4).value, '음성':status.cell(2,5).value}
+    Route = {}
+    r = 0
+    for i in status.rows:
+        if r:
+            Occur[i[0].value] = i[1].value
+            r += 1
+    
+    for i in route.rows:
+        if i[0].value != None:
+            info = {"확진번호":i[1].value, "인적사항":i[2].value, "확진일자":i[3].value, "입원기관":i[4].value, "접촉자수(격리조치중)":i[5].value}
+            routeinfo = {}
+        #elif i[6].value:
+
+        Route[i[0].value]
 
 crawler()
