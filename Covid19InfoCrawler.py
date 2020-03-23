@@ -328,9 +328,11 @@ def occurrence():
     area = []
     for i in route.rows:
         if i[2].value != None:
-            i = i[2].value.split("(")[1].split(",")[0]
-            if i not in area:
-                area.append(i)
+            I = i[2].value.split("(")[1].split(",")[0]
+            if I.isdigit():
+                I = i[2].value.split("(")[1].split(",")[1].split(")")[0]
+            if I not in area:
+                area.append(I)
     area = sorted(area)
     Area = {}
     row = 2
@@ -569,7 +571,7 @@ def crawler():
     clinicinfo()
     maskinfo()
 
-def firebase():
+def firebase(): # 파이어베이스 업로드
     cred = credentials.Certificate(path+'/covid19-daegu-gyeongsan-firebase-adminsdk-wfe8g-097e7accda.json')
     firebase_admin.initialize_app(cred,{
         'databaseURL' : 'https://covid19-daegu-gyeongsan.firebaseio.com/'
@@ -577,18 +579,43 @@ def firebase():
     ref = db.reference('코로나/경산/')
     Occur = {'갱신시간':status.cell(1,1).value, '검사중':status.cell(2,3).value, '완치':status.cell(2,4).value, '음성':status.cell(2,5).value}
     Route = {}
+    Clinic = {}
+    Mask = {}
     r = 0
     for i in status.rows:
         if r:
             Occur[i[0].value] = i[1].value
-            r += 1
+        r += 1
     
     for i in route.rows:
         if i[0].value != None:
-            info = {"확진번호":i[1].value, "인적사항":i[2].value, "확진일자":i[3].value, "입원기관":i[4].value, "접촉자수(격리조치중)":i[5].value}
-            routeinfo = {}
-        #elif i[6].value:
+            Num = i[0].value
+            info = {"확진번호":i[1].value, "인적사항":i[2].value, "확진일자":i[3].value, "입원기관":i[4].value, "접촉자수(격리조치중)":i[5].value, "비고" : [], "이동경로":{}}
+            routenumber = 0
+        elif i[6].value != None:
+            routenumber += 1
+            info["이동경로"][routenumber] = {"경로":i[6].value}
+            if i[7].value != None:
+                info["이동경로"][routenumber]["좌표"] = [i[7].value, i[8].value]
+        elif i[9].value != None:
+            info["비고"].append(i[9].value)
+        Route[Num] = info
 
-        Route[i[0].value]
+    for i in clinic.rows:
+        if i[0].value != None:
+            Clinic[i[0].value] = {"주소":i[1].value, "전화번호":i[2].value, "진료시간":i[3].value, "비고":i[4].value, "좌표":[i[5].value, i[6].value]}
+    
+    for i in mask.rows:
+        if i[0].value != None and i[0].value != "축협":
+            area = i[0].value
+            mask[area] = {"공적판매처":{}, "약국":{}}
+        if i[3].value == "공적판매처":
+            mask[area]["공적판매처"][i[1].value] = {"전화번호":i[2].value, "재고수준":i[5].value, "갱신일시": i[7].value, "좌표": [i[8].value, i[9].value]}
+            if i[6].value != None:
+                mask[area]["공적판매처"][i[1].value]["재고량"] = i[6].value
+        elif i[3].value == "약국":
+            mask[area]["약국"][i[1].value] = {"전화번호":i[2].value, "주소": i[4].value, "재고수준":i[5].value, "갱신일시": i[7].value, "좌표": [i[8].value, i[9].value]}
+            if i[6].value != None:
+                mask[area]["공적판매처"][i[1].value]["재고량"] = i[6].value
 
 crawler()
