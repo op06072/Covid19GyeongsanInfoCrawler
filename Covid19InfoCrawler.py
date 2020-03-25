@@ -2,17 +2,23 @@ from urllib.request import urlopen
 from bs4 import BeautifulSoup
 import openpyxl as xl
 import os
+import google.cloud.exceptions
+from firebase_admin import firestore
 import firebase_admin
 from firebase_admin import credentials
-from firebase_admin import db
 from selenium import webdriver
 import requests
 import re
+import google.cloud
+from google.oauth2 import service_account
+from google.auth.exceptions import RefreshError
+from google.api_core.exceptions import RetryError, ServiceUnavailable, NotFound
+import firebase_admin.auth
 
+driver = ""
 path = os.path.dirname(__file__)
 wb = xl.load_workbook(path+"/코로나데이터.xlsx", data_only = True)
-Locate = xl.load_workbook(path+"/코로나위치좌표.xlsx", data_only = True)
-driver = webdriver.Chrome(path+"/chromedriver")
+Locate = xl.load_workbook(path+"\\코로나위치좌표.xlsx", data_only = True)
 places = []
 
 status = wb["발생 현황"]
@@ -24,9 +30,7 @@ locaterow = 0
 for i in Location:
     if i[0].value != None:
         locaterow += 1
-xy_url = "http://maps.googleapis.com/maps/api/geocode/xml?address="
 # 카카오맵 api주소
-Tbuilding = "https://apis.openapi.sk.com/tmap/jsv2?version=1&appKey=발급받은 Appkey"
 building = 'https://dapi.kakao.com/v2/local/search/keyword.json?query=' # 건물명 검색
 address = 'https://dapi.kakao.com/v2/local/search/address.json?query=' # 주소 검색
 headers = { "Authorization": "KakaoAK 8d63652d146dc5a3a958048e957ba061"}
@@ -47,7 +51,7 @@ def addresslocation(PLACE): # 주소로 좌표획득
         Location.cell(locaterow, 1, PLACE)
         Location.cell(locaterow, 2, float(location['x']))
         Location.cell(locaterow, 3, float(location['y']))
-        Locate.save(path+"/코로나위치좌표.xlsx")
+        #Locate.save(path+"/코로나위치좌표.xlsx")
         return [float(location['x']), float(location['y'])]
     locaterow -= 1
     return [0,0]
@@ -71,7 +75,7 @@ def buildinglocation(PLACE): # 건물명으로 좌표획득
         Location.cell(locaterow, 1, PLACE)
         Location.cell(locaterow, 2, float(location['x']))
         Location.cell(locaterow, 3, float(location['y']))
-        Locate.save(path+"/코로나위치좌표.xlsx")
+        #Locate.save(path+"/코로나위치좌표.xlsx")
         return [float(location['x']), float(location['y'])]
     locaterow -= 1
     return [0,0]
@@ -81,7 +85,7 @@ def routeaddress(string):
         I = "(%s)"%i
         if I in string:
             string = string.split(I)[-1]
-    strlist = " ".join(re.compile('[(|)|가-힣|a-z|A-Z]+').findall(string))
+    strlist = " ".join(re.compile('[&|(|)|가-힣|a-z|A-Z]+').findall(string))
     strlist = re.findall("\S+", strlist)
     Strlist = []
     for i in strlist:
@@ -89,6 +93,14 @@ def routeaddress(string):
             Strlist.append(i)
     strlist = " ".join(Strlist)
     #ban = [':','(',')','월','화','수','목','금','토','일',' ']
+    if "(사용중지" in strlist:
+        strlist = strlist.split("(사용중지")[0]
+    if "에서" in strlist:
+        strlist = strlist.split("에서")[0]
+    if "방문" in strlist:
+        strlist = strlist.split("방문")[0]
+    if "(자가" in strlist:
+        strlist = strlist.split("(자가")[0]
     if "동)" in strlist:
         strlist = strlist.split("동)")[0]+"동)"
     elif "읍)" in strlist:
@@ -146,7 +158,7 @@ def routeaddress(string):
         searchstr = strlist
     elif '청도' in strlist:
         searchstr = strlist
-    elif '시지지' in strlist:
+    elif '시지' in strlist:
         searchstr = strlist
     elif '계대동산병원' in strlist:
         searchstr = "계명대학교 대구동산병원"
@@ -175,7 +187,7 @@ def routeaddress(string):
                     locate = addresslocation("경산시 "+i[4].value)
                     locatecache[searchstr] = locate
                     Location.cell(locaterow, 1, strlist)
-                    Locate.save(path+"/코로나위치좌표.xlsx")
+                    #Locate.save(path+"/코로나위치좌표.xlsx")
                     return locate
     if searchstr in locatecache:
         locate = locatecache[searchstr]
@@ -219,6 +231,8 @@ def movingroute():
         Info=I.tr
         info = []
         I = I.contents
+        for i in range(10):
+            route.cell(row, i+1, None)
         for j in Info:
             t=str(type(j))
             if "bs4.element.NavigableString" not in t and "bs4.element.Comment" not in t:
@@ -275,6 +289,8 @@ def movingroute():
                             if k == "":
                                 continue
                             row += 1
+                            for i in range(10):
+                                route.cell(row, i+1, None)
                             if "퇴원" not in k and "사망" not in k and "격리해제" not in k and "자택" not in k and "신천지" not in k and "직장" not in k and "양성" not in k and "자가격리" not in k and "없음" not in k and "두통" not in k and "발열" not in k and "근육통" not in k and "나경물류" not in k and "한국아이피엠" not in k:
                                 locate = routeaddress(k)
                                 if locate != [0, 0]:
@@ -285,6 +301,8 @@ def movingroute():
                     if j == "":
                         continue
                     row += 1
+                    for i in range(10):
+                        route.cell(row, i+1, None)
                     day = []
                     J = j
                     for i in "월화수목금토일":
@@ -307,6 +325,8 @@ def movingroute():
                     route.cell(row, 7, j)
                 for k in extra:
                     row += 1
+                    for i in range(10):
+                        route.cell(row, i+1, None)
                     route.cell(row, 10, k)
         row += 1
     wb.save(path+"/코로나데이터.xlsx")
@@ -512,6 +532,8 @@ def maskinfo():
         elif i[3].value == "약국":
             place = "경산시 "+i[4].value
             locate = addresslocation(place)
+            Location.cell(locaterow, 1, i[1].value)
+            #Locate.save(path+"/코로나위치좌표.xlsx")
             mask.cell(row, 9, locate[0])
             mask.cell(row, 10, locate[1])
 
@@ -560,62 +582,119 @@ def clinicinfo(): # 선별진료소 데이터 크롤링
             extra = clinic.cell(row-1, 5).value
             clinic.cell(row, 5, extra)
         locate = addresslocation("경산시 " + clinic.cell(row, 2).value)
+        Location.cell(locaterow, 1, clinic.cell(row, 1).value)
+        Locate.save(path+"/코로나위치좌표.xlsx")
         clinic.cell(row, 6, locate[0])
         clinic.cell(row, 7, locate[1])
         row += 1
     wb.save(path+"/코로나데이터.xlsx")
 
 def crawler():
+    global driver
+    driver = webdriver.Chrome(path+"/chromedriver")
     movingroute()
     occurrence()
     clinicinfo()
     maskinfo()
+    Locate.save(path+"/코로나위치좌표.xlsx")
 
 def firebase(): # 파이어베이스 업로드
-    cred = credentials.Certificate(path+'/covid19-daegu-gyeongsan-firebase-adminsdk-wfe8g-097e7accda.json')
-    firebase_admin.initialize_app(cred,{
+    cred = credentials.Certificate(path+'\\Mykey.json')
+    #cred = service_account.Credentials.from_service_account_file("Mykey.json")
+    firebase_admin.initialize_app(cred, {
         'databaseURL' : 'https://covid19-daegu-gyeongsan.firebaseio.com/'
     })
-    ref = db.reference('코로나/경산/')
-    Occur = {'갱신시간':status.cell(1,1).value, '검사중':status.cell(2,3).value, '완치':status.cell(2,4).value, '음성':status.cell(2,5).value}
+    #default_app = firebase_admin.initialize_app(cred, {
+    #    'databaseURL' : 'https://covid19-daegu-gyeongsan.firebaseio.com/'
+    #})
+    #db = firestore.client(default_app)
+    db = firestore.client()
+    Occur = {u'갱신시간':status.cell(1,1).value, u'검사중':status.cell(2,3).value, u'완치':status.cell(2,4).value, u'음성':status.cell(2,5).value}
     Route = {}
     Clinic = {}
     Mask = {}
     r = 0
+    ref = db.collection(u'covid19-daegu-gyeongsan')
+    ref = ref.document(u'코로나경산')
+    b = u'b'
+    ref.set({u'a':b})
+    ref.set({'갱신시간':status.cell(1,1).value})
+    ref = db.collection(u'covid19-daegu-gyeongsan').document(u'코로나경산').set({u'갱신시간':status.cell(1,1).value, u'검사중':status.cell(2,3).value, u'완치':status.cell(2,4).value, u'음성':status.cell(2,5).value})
+    ref.update({'갱신시간':status.cell(1,1).value})
+    ref.update({'검사중':status.cell(2,3).value})
+    ref.update({'완치':status.cell(2,4).value})
+    ref.update({'음성':status.cell(2,5).value})
     for i in status.rows:
         if r:
             Occur[i[0].value] = i[1].value
+            #ref.update({i[0].value:i[1].value})
         r += 1
     
+    #Path = '코로나/경산/이동경로'
+    #ref = db.reference(Path)
     for i in route.rows:
         if i[0].value != None:
             Num = i[0].value
-            info = {"확진번호":i[1].value, "인적사항":i[2].value, "확진일자":i[3].value, "입원기관":i[4].value, "접촉자수(격리조치중)":i[5].value, "비고" : [], "이동경로":{}}
+            #ref = db.reference(Path+'/%s'%Num)
+            info = {u"확진번호":i[1].value, u"인적사항":i[2].value, u"확진일자":i[3].value, u"입원기관":i[4].value, u"접촉자수(격리조치중)":i[5].value, u"비고" : [], u"이동경로":{}}
+            #ref.update({"확진번호":i[1].value, "인적사항":i[2].value, "확진일자":i[3].value, "입원기관":i[4].value, "접촉자수(격리조치중)":i[5].value, "비고" : [], "이동경로":{}})
             routenumber = 0
         elif i[6].value != None:
             routenumber += 1
-            info["이동경로"][routenumber] = {"경로":i[6].value}
+            #ref = db.reference(Path+'/%s/경로/%s'%(Num, routenumber))
+            info[u"이동경로"][routenumber] = {u"경로":i[6].value}
+            #ref.update({"route":i[6].value})
             if i[7].value != None:
-                info["이동경로"][routenumber]["좌표"] = [i[7].value, i[8].value]
+                info[u"이동경로"][routenumber][u"좌표"] = [i[7].value, i[8].value]
+                #ref.update({"좌표":[i[7].value, i[8].value]})
         elif i[9].value != None:
-            info["비고"].append(i[9].value)
+            #ref = db.reference(Path+'/%s'%Num)
+            info[u"비고"].append(i[9].value)
+            #ref.update({"비고": info["비고"]})
         Route[Num] = info
 
+    #Path = '코로나/경산/선별진료소'
+    #ref = db.reference(Path)
     for i in clinic.rows:
         if i[0].value != None:
-            Clinic[i[0].value] = {"주소":i[1].value, "전화번호":i[2].value, "진료시간":i[3].value, "비고":i[4].value, "좌표":[i[5].value, i[6].value]}
-    
-    for i in mask.rows:
-        if i[0].value != None and i[0].value != "축협":
-            area = i[0].value
-            mask[area] = {"공적판매처":{}, "약국":{}}
-        if i[3].value == "공적판매처":
-            mask[area]["공적판매처"][i[1].value] = {"전화번호":i[2].value, "재고수준":i[5].value, "갱신일시": i[7].value, "좌표": [i[8].value, i[9].value]}
-            if i[6].value != None:
-                mask[area]["공적판매처"][i[1].value]["재고량"] = i[6].value
-        elif i[3].value == "약국":
-            mask[area]["약국"][i[1].value] = {"전화번호":i[2].value, "주소": i[4].value, "재고수준":i[5].value, "갱신일시": i[7].value, "좌표": [i[8].value, i[9].value]}
-            if i[6].value != None:
-                mask[area]["공적판매처"][i[1].value]["재고량"] = i[6].value
+            #ref = db.reference(Path + "/%s"%i[0].value)
+            Clinic[i[0].value] = {u"주소":i[1].value, u"전화번호":i[2].value, u"진료시간":i[3].value, u"비고":i[4].value, u"좌표":[i[5].value, i[6].value]}
+            #ref.update({u"주소":i[1].value, u"전화번호":i[2].value, u"진료시간":i[3].value, "비고":i[4].value, "좌표":[i[5].value, i[6].value]})
 
-crawler()
+    #Path = '코로나/경산/공적마스크'
+    #ref = db.reference(Path)
+    for i in mask.rows:
+        if i[0].value != None:
+            area = "".join(re.compile('[가-힣|1-9]+').findall(i[0].value))
+            if area not in Mask:
+                Mask[area] = {}
+        if i[3].value == "공적판매처":
+            if "공적판매처" not in Mask[area]:
+                Mask[area][u'공적판매처'] = {}
+            #Path = '코로나/경산/공적마스크'
+            #ref = db.reference(Path+"/%s/공적판매처/%s"%(area, i[1].value))
+            Mask[area][u"공적판매처"][i[1].value] = {u"전화번호":i[2].value, u"재고수준":i[5].value, u"갱신일시": i[7].value, u"좌표": [i[8].value, i[9].value]}
+            #ref.update({"전화번호":i[2].value, "재고수준":i[5].value, "갱신일시": i[7].value, "좌표": [i[8].value, i[9].value]})
+            if i[6].value != None:
+                Mask[area][u"공적판매처"][i[1].value][u"재고량"] = i[6].value
+                #ref.update({"재고량": i[6].value})
+        elif i[3].value == "약국":
+            if "약국" not in Mask[area]:
+                Mask[area][u'약국'] = {}
+            #Path = '코로나/경산/공적마스크'
+            #ref = db.reference(Path+"/%s/약국/%s"%(area, i[1].value))
+            Mask[area][u"약국"][i[1].value] = {u"전화번호":i[2].value, u"주소": i[4].value, u"재고수준":i[5].value, u"갱신일시": i[7].value, u"좌표": [i[8].value, i[9].value]}
+            #ref.update({"전화번호":i[2].value, "주소": i[4].value, "재고수준":i[5].value, "갱신일시": i[7].value, "좌표": [i[8].value, i[9].value]})
+            if i[6].value != None:
+                Mask[area][u"약국"][i[1].value][u"재고량"] = i[6].value
+                #ref.update({"재고량": i[6].value})
+    data = {
+        '발생동향':Occur,
+        '이동경로':Route,
+        '선별진료소':Clinic,
+        '공적마스크':Mask
+        }
+    db.collection(u'코로나').document(u'경산').set(data)
+
+#crawler()
+firebase()
